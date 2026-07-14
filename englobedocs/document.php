@@ -1,11 +1,12 @@
 <?php
 session_start();
 require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/helpers/csrf.php';
 $id = intval($_GET['id'] ?? 0);
 if(!$id){ header('Location: /englobedocs/index.php'); exit; }
 $stmt = $pdo->prepare('SELECT d.*, c.name AS category_name FROM documents d LEFT JOIN categories c ON d.category_id = c.id WHERE d.id = ?');
 $stmt->execute([$id]);
-doc = $stmt->fetch();
+$doc = $stmt->fetch();
 if(!$doc){ header('Location: /englobedocs/index.php'); exit; }
 // Comments
 $comments = $pdo->prepare('SELECT cm.*, u.name FROM comments cm JOIN users u ON cm.user_id = u.id WHERE cm.document_id = ? ORDER BY cm.created_at DESC');
@@ -41,6 +42,7 @@ if(isset($_SESSION['user'])){
     <div style="margin-top:1rem">
       <?php if(isset($_SESSION['user'])): ?>
         <form id="fav-form" action="/englobedocs/favorite.php" method="post" style="display:inline">
+          <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(generate_csrf_token()); ?>">
           <input type="hidden" name="document_id" value="<?php echo $id; ?>">
           <button class="btn" type="submit"><?php echo $is_fav ? 'Retirer des favoris' : 'Ajouter aux favoris'; ?></button>
         </form>
@@ -48,10 +50,21 @@ if(isset($_SESSION['user'])){
       <a class="btn outline" href="/englobedocs/download.php?id=<?php echo $id; ?>">Télécharger</a>
     </div>
 
+    <?php if(!empty($doc['file_path'])): ?>
+      <section style="margin-top:1rem">
+        <h3>Aperçu</h3>
+        <div style="max-width:900px">
+          <!-- Simple browser PDF preview; consider integrating PDF.js for advanced preview -->
+          <iframe src="/englobedocs/uploads/<?php echo htmlspecialchars($doc['file_path']); ?>" style="width:100%;height:600px;border:0;border-radius:8px;" title="PDF Preview"></iframe>
+        </div>
+      </section>
+    <?php endif; ?>
+
     <section style="margin-top:2rem">
       <h3>Commentaires</h3>
       <?php if(isset($_SESSION['user'])): ?>
         <form method="post" action="/englobedocs/comment.php" class="form" style="max-width:600px">
+          <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(generate_csrf_token()); ?>">
           <input type="hidden" name="document_id" value="<?php echo $id; ?>">
           <label>Message<textarea name="content" required></textarea></label>
           <button class="btn">Envoyer</button>

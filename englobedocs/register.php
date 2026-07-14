@@ -1,30 +1,35 @@
 <?php
 session_start();
 require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/helpers/csrf.php';
 
 $errors = [];
 if($_SERVER['REQUEST_METHOD'] === 'POST'){
-  $name = trim($_POST['name'] ?? '');
-  $email = trim($_POST['email'] ?? '');
-  $password = $_POST['password'] ?? '';
-  $password_confirm = $_POST['password_confirm'] ?? '';
+  if(!verify_csrf_token($_POST['csrf_token'] ?? '')){
+    $errors[] = 'Requête invalide (CSRF).';
+  } else {
+    $name = trim($_POST['name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
+    $password_confirm = $_POST['password_confirm'] ?? '';
 
-  if(!$name) $errors[] = 'Le nom est requis.';
-  if(!filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Email invalide.';
-  if(strlen($password) < 6) $errors[] = 'Le mot de passe doit contenir au moins 6 caractères.';
-  if($password !== $password_confirm) $errors[] = 'Les mots de passe ne correspondent pas.';
+    if(!$name) $errors[] = 'Le nom est requis.';
+    if(!filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Email invalide.';
+    if(strlen($password) < 6) $errors[] = 'Le mot de passe doit contenir au moins 6 caractères.';
+    if($password !== $password_confirm) $errors[] = 'Les mots de passe ne correspondent pas.';
 
-  if(empty($errors)){
-    $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
-    $stmt->execute([$email]);
-    if($stmt->fetch()){
-      $errors[] = 'Un compte existe déjà avec cet email.';
-    } else {
-      $hash = password_hash($password, PASSWORD_DEFAULT);
-      $stmt = $pdo->prepare('INSERT INTO users (name, email, password, role, created_at) VALUES (?, ?, ?, ?, NOW())');
-      $stmt->execute([$name, $email, $hash, 'user']);
-      header('Location: /englobedocs/login.php');
-      exit;
+    if(empty($errors)){
+      $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
+      $stmt->execute([$email]);
+      if($stmt->fetch()){
+        $errors[] = 'Un compte existe déjà avec cet email.';
+      } else {
+        $hash = password_hash($password, PASSWORD_DEFAULT);
+        $stmt = $pdo->prepare('INSERT INTO users (name, email, password, role, created_at) VALUES (?, ?, ?, ?, NOW())');
+        $stmt->execute([$name, $email, $hash, 'user']);
+        header('Location: /englobedocs/login.php');
+        exit;
+      }
     }
   }
 }
@@ -43,6 +48,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
   <h2>Créer un compte</h2>
   <?php if($errors): ?><div class="errors"><?php foreach($errors as $e) echo '<p>'.htmlspecialchars($e).'</p>'; ?></div><?php endif; ?>
   <form method="post" class="form">
+    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(generate_csrf_token()); ?>">
     <label>Nom<input type="text" name="name" required></label>
     <label>Email<input type="email" name="email" required></label>
     <label>Mot de passe<input type="password" name="password" required></label>

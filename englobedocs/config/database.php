@@ -1,5 +1,6 @@
 <?php
 // Database configuration using PDO
+require_once __DIR__ . '/security.php';
 $host = '127.0.0.1';
 $db   = 'englobedocs';
 $user = 'root';

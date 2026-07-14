@@ -1,25 +1,30 @@
 <?php
 session_start();
 require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/helpers/csrf.php';
 
 $errors = [];
 if($_SERVER['REQUEST_METHOD'] === 'POST'){
-  $email = trim($_POST['email'] ?? '');
-  $password = $_POST['password'] ?? '';
-  if(!filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Email invalide.';
-  if(empty($password)) $errors[] = 'Mot de passe requis.';
+  if(!verify_csrf_token($_POST['csrf_token'] ?? '')){
+    $errors[] = 'Requête invalide (CSRF).';
+  } else {
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
+    if(!filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Email invalide.';
+    if(empty($password)) $errors[] = 'Mot de passe requis.';
 
-  if(empty($errors)){
-    $stmt = $pdo->prepare('SELECT id, name, email, password, role FROM users WHERE email = ?');
-    $stmt->execute([$email]);
-    $user = $stmt->fetch();
-    if($user && password_verify($password, $user['password'])){
-      unset($user['password']);
-      $_SESSION['user'] = $user;
-      header('Location: /englobedocs/dashboard.php');
-      exit;
-    } else {
-      $errors[] = 'Email ou mot de passe invalide.';
+    if(empty($errors)){
+      $stmt = $pdo->prepare('SELECT id, name, email, password, role FROM users WHERE email = ?');
+      $stmt->execute([$email]);
+      $user = $stmt->fetch();
+      if($user && password_verify($password, $user['password'])){
+        unset($user['password']);
+        $_SESSION['user'] = $user;
+        header('Location: /englobedocs/dashboard.php');
+        exit;
+      } else {
+        $errors[] = 'Email ou mot de passe invalide.';
+      }
     }
   }
 }
@@ -38,6 +43,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
   <h2>Se connecter</h2>
   <?php if($errors): ?><div class="errors"><?php foreach($errors as $e) echo '<p>'.htmlspecialchars($e).'</p>'; ?></div><?php endif; ?>
   <form method="post" class="form">
+    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(generate_csrf_token()); ?>">
     <label>Email<input type="email" name="email" required></label>
     <label>Mot de passe<input type="password" name="password" required></label>
     <button class="btn">Se connecter</button>

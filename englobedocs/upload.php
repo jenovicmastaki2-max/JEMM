@@ -1,63 +1,68 @@
 <?php
 session_start();
 require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/helpers/csrf.php';
 if(!isset($_SESSION['user']) || ($_SESSION['user']['role'] ?? '') !== 'admin'){
   header('Location: /englobedocs/login.php');
   exit;
 }
 $errors = [];
 if($_SERVER['REQUEST_METHOD'] === 'POST'){
-  // Validate inputs
-  $title = trim($_POST['title'] ?? '');
-  $description = trim($_POST['description'] ?? '');
-  $author = trim($_POST['author'] ?? '');
-  $category_id = intval($_POST['category_id'] ?? 0);
-  $type = ($_POST['type'] ?? 'free') === 'premium' ? 'premium' : 'free';
-
-  if(!$title) $errors[] = 'Le titre est requis.';
-
-  // File uploads
-  if(!isset($_FILES['pdf']) || $_FILES['pdf']['error'] !== UPLOAD_ERR_OK){
-    $errors[] = 'Le fichier PDF est requis.';
+  if(!verify_csrf_token($_POST['csrf_token'] ?? '')){
+    $errors[] = 'Requête invalide (CSRF).';
   } else {
-    $pdf = $_FILES['pdf'];
-    $allowed = ['application/pdf'];
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mime = finfo_file($finfo, $pdf['tmp_name']);
-    finfo_close($finfo);
-    if(!in_array($mime, $allowed)) $errors[] = 'Seuls les PDF sont autorisés.';
-    if($pdf['size'] > 50 * 1024 * 1024) $errors[] = 'Fichier trop volumineux (max 50MB).';
-  }
+    // Validate inputs
+    $title = trim($_POST['title'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+    $author = trim($_POST['author'] ?? '');
+    $category_id = intval($_POST['category_id'] ?? 0);
+    $type = ($_POST['type'] ?? 'free') === 'premium' ? 'premium' : 'free';
 
-  // Cover image optional
-  $cover_name = null;
-  if(isset($_FILES['cover']) && $_FILES['cover']['error'] === UPLOAD_ERR_OK){
-    $cover = $_FILES['cover'];
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mime = finfo_file($finfo, $cover['tmp_name']);
-    finfo_close($finfo);
-    $img_allowed = ['image/jpeg','image/png','image/webp'];
-    if(!in_array($mime, $img_allowed)) $errors[] = 'Image de couverture invalide (jpg/png/webp).';
-  }
+    if(!$title) $errors[] = 'Le titre est requis.';
 
-  if(empty($errors)){
-    // Move files
-    $uploads_dir = __DIR__ . '/uploads';
-    if(!is_dir($uploads_dir)) mkdir($uploads_dir, 0755, true);
-    $pdf_name = time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/','_',basename($pdf['name']));
-    if(!move_uploaded_file($pdf['tmp_name'], $uploads_dir . '/' . $pdf_name)){
-      $errors[] = 'Impossible d\'enregistrer le PDF.';
+    // File uploads
+    if(!isset($_FILES['pdf']) || $_FILES['pdf']['error'] !== UPLOAD_ERR_OK){
+      $errors[] = 'Le fichier PDF est requis.';
+    } else {
+      $pdf = $_FILES['pdf'];
+      $allowed = ['application/pdf'];
+      $finfo = finfo_open(FILEINFO_MIME_TYPE);
+      $mime = finfo_file($finfo, $pdf['tmp_name']);
+      finfo_close($finfo);
+      if(!in_array($mime, $allowed)) $errors[] = 'Seuls les PDF sont autorisés.';
+      if($pdf['size'] > 50 * 1024 * 1024) $errors[] = 'Fichier trop volumineux (max 50MB).';
     }
-    if(isset($cover) && $cover['error'] === UPLOAD_ERR_OK){
-      $cover_name = time() . '_cover_' . preg_replace('/[^a-zA-Z0-9._-]/','_',basename($cover['name']));
-      move_uploaded_file($cover['tmp_name'], $uploads_dir . '/' . $cover_name);
+
+    // Cover image optional
+    $cover_name = null;
+    if(isset($_FILES['cover']) && $_FILES['cover']['error'] === UPLOAD_ERR_OK){
+      $cover = $_FILES['cover'];
+      $finfo = finfo_open(FILEINFO_MIME_TYPE);
+      $mime = finfo_file($finfo, $cover['tmp_name']);
+      finfo_close($finfo);
+      $img_allowed = ['image/jpeg','image/png','image/webp'];
+      if(!in_array($mime, $img_allowed)) $errors[] = 'Image de couverture invalide (jpg/png/webp).';
     }
 
     if(empty($errors)){
-      $stmt = $pdo->prepare('INSERT INTO documents (title, description, category_id, author, file_path, cover_image, type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())');
-      $stmt->execute([$title, $description, $category_id ?: null, $author, $pdf_name, $cover_name, $type]);
-      header('Location: /englobedocs/admin.php');
-      exit;
+      // Move files
+      $uploads_dir = __DIR__ . '/uploads';
+      if(!is_dir($uploads_dir)) mkdir($uploads_dir, 0755, true);
+      $pdf_name = time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/','_',basename($pdf['name']));
+      if(!move_uploaded_file($pdf['tmp_name'], $uploads_dir . '/' . $pdf_name)){
+        $errors[] = 'Impossible d\'enregistrer le PDF.';
+      }
+      if(isset($cover) && $cover['error'] === UPLOAD_ERR_OK){
+        $cover_name = time() . '_cover_' . preg_replace('/[^a-zA-Z0-9._-]/','_',basename($cover['name']));
+        move_uploaded_file($cover['tmp_name'], $uploads_dir . '/' . $cover_name);
+      }
+
+      if(empty($errors)){
+        $stmt = $pdo->prepare('INSERT INTO documents (title, description, category_id, author, file_path, cover_image, type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())');
+        $stmt->execute([$title, $description, $category_id ?: null, $author, $pdf_name, $cover_name, $type]);
+        header('Location: /englobedocs/admin.php');
+        exit;
+      }
     }
   }
 }
@@ -78,6 +83,7 @@ $cats = $pdo->query('SELECT id, name FROM categories ORDER BY name')->fetchAll()
   <h2>Ajouter un document</h2>
   <?php if($errors): ?><div class="errors"><?php foreach($errors as $e) echo '<p>'.htmlspecialchars($e).'</p>'; ?></div><?php endif; ?>
   <form method="post" enctype="multipart/form-data" class="form">
+    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(generate_csrf_token()); ?>">
     <label>Titre<input type="text" name="title" required></label>
     <label>Description<textarea name="description"></textarea></label>
     <label>Auteur<input type="text" name="author"></label>
